@@ -4,9 +4,10 @@ module Discordrb::Webhooks
   # An embed is a multipart-style attachment to a webhook message that can have a variety of different purposes and
   # appearances.
   class Embed
-    def initialize(title: nil, description: nil, url: nil, timestamp: nil, colour: nil, color: nil, footer: nil,
-                   image: nil, thumbnail: nil, video: nil, provider: nil, author: nil, fields: [])
+    def initialize(title: nil, type: nil, description: nil, url: nil, timestamp: nil, colour: nil, color: nil,
+                   footer: nil, image: nil, thumbnail: nil, video: nil, provider: nil, author: nil, fields: [])
       @title = title
+      @type = type
       @description = description
       @url = url
       @timestamp = timestamp
@@ -22,6 +23,9 @@ module Discordrb::Webhooks
 
     # @return [String, nil] title of the embed that will be displayed above everything else.
     attr_accessor :title
+
+    # @return [String, nil] type of the embed
+    attr_accessor :type
 
     # @return [String, nil] description for this embed
     attr_accessor :description
@@ -106,6 +110,7 @@ module Discordrb::Webhooks
     def to_hash
       {
         title: @title,
+        type: @type,
         description: @description,
         url: @url,
         timestamp: @timestamp&.utc&.iso8601,
