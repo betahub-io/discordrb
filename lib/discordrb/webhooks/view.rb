@@ -31,6 +31,7 @@ class Discordrb::Webhooks::View
     # @!visibility private
     def initialize
       @components = []
+      @type = COMPONENT_TYPES[:action_row]
     end
 
     # Add a button to this action row.
