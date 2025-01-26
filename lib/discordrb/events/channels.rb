@@ -32,6 +32,8 @@ module Discordrb::Events
     def initialize(data, bot)
       @bot = bot
       @channel = data.is_a?(Discordrb::Channel) ? data : bot.channel(data['id'].to_i)
+
+      super(data, bot)
     end
   end
 
@@ -94,6 +96,8 @@ module Discordrb::Events
       @id = data['id'].to_i
       @server = bot.server(data['guild_id'].to_i) if data['guild_id']
       @owner_id = bot.user(data['owner_id']) if @type == 3
+
+      super(data, bot)
     end
   end
 
@@ -141,6 +145,8 @@ module Discordrb::Events
       recipient = data['user']
       recipient_user = bot.ensure_user(recipient)
       @recipient = Discordrb::Recipient.new(recipient_user, @channel, bot)
+
+      super(data, bot)
     end
   end
 

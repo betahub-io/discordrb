@@ -46,6 +46,11 @@ describe Discordrb::Message do
       expect(bot).to receive(:ensure_user).with message_author
       described_class.new(message_data, bot)
     end
+
+    it 'stores raw data' do
+      message = described_class.new(message_data, bot)
+      expect(message.instance_variable_get(:@data)).to eq(message_data)
+    end
   end
 
   describe '#emoji' do
@@ -257,6 +262,13 @@ describe Discordrb::Message do
       expect(channel).to receive(:send_message).with(content, tts, embed, attachments, allowed_mentions, message_reference, components)
 
       message.respond(content, tts, embed, attachments, allowed_mentions, message_reference, components)
+    end
+  end
+
+  describe '#raw_data' do
+    it 'returns the raw data hash' do
+      message = described_class.new(message_data, bot)
+      expect(message.raw_data).to eq(message_data)
     end
   end
 end

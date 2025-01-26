@@ -10,8 +10,7 @@ module Discordrb
     alias_method :text, :content
     alias_method :to_s, :content
 
-    # @return [Member, User] the user that sent this message. (Will be a {Member} most of the time, it should only be a
-    #   {User} for old messages when the author has left the server since then)
+    # @return [Member, User] the user that sent this message.
     attr_reader :author
     alias_method :user, :author
     alias_method :writer, :author
@@ -76,6 +75,7 @@ module Discordrb
     # @!visibility private
     def initialize(data, bot)
       @bot = bot
+      @data = data
       @content = data['content']
       @channel = bot.channel(data['channel_id'].to_i)
       @pinned = data['pinned']
@@ -110,11 +110,11 @@ module Discordrb
                     else
                       Discordrb::LOGGER.debug("Member with ID #{data['author']['id']} not cached (possibly left the server).")
                       member = if data['member']
-                                 member_data = data['author'].merge(data['member'])
-                                 Member.new(member_data, @server, bot)
-                               else
-                                 @bot.ensure_user(data['author'])
-                               end
+                               member_data = data['author'].merge(data['member'])
+                               Member.new(member_data, @server, bot)
+                             else
+                               @bot.ensure_user(data['author'])
+                             end
                     end
 
                     member
@@ -157,6 +157,10 @@ module Discordrb
 
       @components = []
       @components = data['components'].map { |component_data| Components.from_data(component_data, @bot) } if data['components']
+    end
+
+    def raw_data
+      @data
     end
 
     # Replies to this message with the specified content.

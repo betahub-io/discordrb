@@ -8,6 +8,8 @@ module Discordrb::Events
     # @!visibility private
     def initialize(bot)
       @bot = bot
+
+      super(nil, bot)
     end
   end
 

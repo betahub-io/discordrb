@@ -25,6 +25,8 @@ module Discordrb::Events
 
       role_id = data['role']['id'].to_i
       @role = @server.roles.find { |r| r.id == role_id }
+
+      super(data, bot)
     end
   end
 
@@ -63,6 +65,8 @@ module Discordrb::Events
       @id = data['role_id'].to_i
       server_id = data['guild_id'].to_i
       @server = bot.server(server_id)
+
+      super(data, bot)
     end
   end
 

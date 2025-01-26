@@ -11,6 +11,8 @@ module Discordrb::Events
     def initialize(data, bot)
       @bot = bot
       @thread = data.is_a?(Discordrb::Channel) ? data : bot.channel(data['id'].to_i)
+
+      super(data, bot)
     end
   end
 
@@ -81,6 +83,8 @@ module Discordrb::Events
       end || []
       @removed_member_ids = data['removed_member_ids']&.map(&:resolve_id) || []
       @member_count = data['member_count']
+
+      super(data, bot)
     end
   end
 

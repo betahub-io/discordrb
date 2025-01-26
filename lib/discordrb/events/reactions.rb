@@ -21,6 +21,8 @@ module Discordrb::Events
       @user_id = data['user_id'].to_i
       @message_id = data['message_id'].to_i
       @channel_id = data['channel_id'].to_i
+
+      super(data, bot)
     end
 
     # @return [User, Member] the user that reacted to this message, or member if a server exists.
@@ -118,6 +120,8 @@ module Discordrb::Events
 
       @message_id = data['message_id'].to_i
       @channel_id = data['channel_id'].to_i
+
+      super(data, bot)
     end
 
     # @return [Channel] the channel where the removal occurred.

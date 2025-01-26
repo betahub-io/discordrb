@@ -30,6 +30,8 @@ module Discordrb::Events
       @await = await
       @event = event
       @bot = bot
+
+      super(event.data, bot)
     end
   end
 

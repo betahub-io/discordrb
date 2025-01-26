@@ -34,6 +34,8 @@ module Discordrb::Events
               end
 
       @timestamp = Time.at(data['timestamp'].to_i)
+
+      super(data, bot)
     end
   end
 

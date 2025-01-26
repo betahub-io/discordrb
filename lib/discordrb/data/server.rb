@@ -64,6 +64,7 @@ module Discordrb
     # @!visibility private
     def initialize(data, bot)
       @bot = bot
+      @data = data  # Store the raw data
       @owner_id = data['owner_id'].to_i
       @id = data['id'].to_i
       @members = {}

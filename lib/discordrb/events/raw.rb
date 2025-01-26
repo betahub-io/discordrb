@@ -18,6 +18,8 @@ module Discordrb::Events
       @type = type
       @data = data
       @bot = bot
+
+      super(data, bot)
     end
   end
 

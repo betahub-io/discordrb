@@ -24,6 +24,8 @@ module Discordrb::Events
 
       init_user(data, bot)
       init_roles(data, bot)
+
+      super(data, bot)
     end
 
     private

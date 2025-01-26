@@ -365,4 +365,22 @@ describe Discordrb::Events do
       end
     end
   end
+
+  describe Discordrb::Events::Event do
+    let(:data) { { 'test' => 123, 'nested' => { 'value' => 'abc' } } }
+    let(:bot) { double('bot') }
+    let(:event) { described_class.new(data, bot) }
+
+    describe '#initialize' do
+      it 'stores raw data' do
+        expect(event.instance_variable_get(:@data)).to eq(data)
+      end
+    end
+
+    describe '#raw_data' do
+      it 'returns the raw data hash' do
+        expect(event.raw_data).to eq(data)
+      end
+    end
+  end
 end

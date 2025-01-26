@@ -53,6 +53,17 @@ module Discordrb::Events
   class Event
     # @return [Bot] the bot used to initialize this event.
     attr_reader :bot
+    # @return [Hash] the raw event data received from Discord
+    attr_reader :data
+
+    def initialize(data, bot)
+      @bot = bot
+      @data = data
+    end
+
+    def raw_data
+      @data
+    end
 
     class << self
       protected

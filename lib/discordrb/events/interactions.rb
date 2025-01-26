@@ -32,6 +32,8 @@ module Discordrb::Events
     def initialize(data, bot)
       @interaction = Discordrb::Interaction.new(data, bot)
       @bot = bot
+
+      super(data, bot)
     end
 
     # (see Interaction#respond)

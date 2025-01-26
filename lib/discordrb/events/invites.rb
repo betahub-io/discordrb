@@ -39,6 +39,8 @@ module Discordrb::Events
       @invite = invite
       @channel = bot.channel(data['channel_id'])
       @server = bot.server(data['guild_id']) if data['guild_id']
+
+      super(data, bot)
     end
   end
 
@@ -58,6 +60,8 @@ module Discordrb::Events
       @channel = bot.channel(data['channel_id'])
       @server = bot.server(data['guild_id']) if data['guild_id']
       @code = data['code']
+
+      super(data, bot)
     end
   end
 

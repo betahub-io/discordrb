@@ -127,11 +127,11 @@ module Discordrb::Events
     def initialize(message, bot)
       @bot = bot
       @message = message
-      @channel = message.channel
       @saved_message = ''
       @file = nil
       @filename = nil
       @file_spoiler = nil
+      super(message.instance_variable_get(:@data), bot)
     end
 
     # Sends file with a caption to the channel this message was sent in, right now.
@@ -288,6 +288,8 @@ module Discordrb::Events
       @channel = bot.channel(data['channel_id'].to_i)
       @saved_message = ''
       @bot = bot
+
+      super(data, bot)
     end
   end
 

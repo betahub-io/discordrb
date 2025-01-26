@@ -13,6 +13,8 @@ module Discordrb::Events
       @bot = bot
 
       init_server(data, bot)
+
+      super(data, bot)
     end
 
     # Initializes this event with server data. Should be overwritten in case the server doesn't exist at the time

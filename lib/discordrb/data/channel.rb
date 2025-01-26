@@ -113,6 +113,7 @@ module Discordrb
       @bot = bot
       # data is sometimes a Hash and other times an array of Hashes, you only want the last one if it's an array
       data = data[-1] if data.is_a?(Array)
+      @data = data  # Store the raw data
 
       @id = data['id'].to_i
       @type = data['type'] || 0
@@ -120,10 +121,10 @@ module Discordrb
       @bitrate = data['bitrate']
       @user_limit = data['user_limit']
       @position = data['position']
-      @parent_id = data['parent_id'].to_i if data['parent_id']
+      @recipients = []
+      @permission_overwrites = {}
 
       if private?
-        @recipients = []
         data['recipients']&.each do |recipient|
           recipient_user = bot.ensure_user(recipient)
           @recipients << Recipient.new(recipient_user, self, bot)
@@ -141,6 +142,7 @@ module Discordrb
       end
 
       @nsfw = data['nsfw'] || false
+      @parent_id = data['parent_id']&.to_i if data['parent_id']
       @rate_limit_per_user = data['rate_limit_per_user'] || 0
       @message_count = data['message_count']
       @member_count = data['member_count']

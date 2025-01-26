@@ -16,6 +16,8 @@ module Discordrb::Events
       @user = bot.user(data['user']['id'].to_i)
       @server = bot.server(data['guild_id'].to_i)
       @bot = bot
+
+      super(data, bot)
     end
   end
 

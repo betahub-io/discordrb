@@ -26,6 +26,8 @@ module Discordrb::Events
       @status = data['status'].to_sym
       @client_status = user.client_status
       @server = bot.server(data['guild_id'].to_i)
+
+      super(data, bot)
     end
   end
 
@@ -89,6 +91,8 @@ module Discordrb::Events
       @server = bot.server(data['guild_id'].to_i)
       @user = bot.user(data['user']['id'].to_i)
       @client_status = @user.client_status
+
+      super(data, bot)
     end
 
     # @return [String] the name of the new game the user is playing.

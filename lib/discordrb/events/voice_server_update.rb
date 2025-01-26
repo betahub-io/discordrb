@@ -25,6 +25,8 @@ module Discordrb::Events
       @token = data['token']
       @endpoint = data['endpoint']
       @server = bot.server(data['guild_id'])
+
+      super(data, bot)
     end
   end
 

@@ -27,6 +27,8 @@ module Discordrb::Events
       @channel = bot.channel(data['channel_id'].to_i) if data['channel_id']
       @old_channel = bot.channel(old_channel_id) if old_channel_id
       @user = bot.user(data['user_id'].to_i)
+
+      super(data, bot)
     end
   end
 
