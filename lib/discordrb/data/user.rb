@@ -142,11 +142,11 @@ module Discordrb
     #   Sends a private to this user.
     #   @param content [String] The content to send.
     #   @return [Message] the message sent to this user.
-    def pm(content = nil)
+    def pm(content = nil, tts = false, embed = nil, attachments = nil, allowed_mentions = nil, message_reference = nil, components = nil)
       if content
         # Recursively call pm to get the channel, then send a message to it
         channel = pm
-        channel.send_message(content)
+        channel.send_message(content, tts, embed, attachments, allowed_mentions, message_reference, components)
       else
         # If no message was specified, return the PM channel
         @bot.pm_channel(@id)
