@@ -22,6 +22,22 @@ module Discordrb
       @channels = {}
       @pm_channels = {}
       @thread_members = {}
+      
+      @no_cache_read = false
+    end
+
+    # Executes a block of code with cache reading disabled
+    # Cache writing (storing new data) will still work
+    # @yield The block to execute with cache reading disabled
+    # @return [Object] The result of the block
+    def no_cache
+      old_no_cache_read = @no_cache_read
+      @no_cache_read = true
+      begin
+        yield
+      ensure
+        @no_cache_read = old_no_cache_read
+      end
     end
 
     # Returns or caches the available voice regions
@@ -47,7 +63,7 @@ module Discordrb
       id = id.resolve_id
 
       debug("Obtaining data for channel with id #{id}")
-      return @channels[id] if @channels[id]
+      return @channels[id] if !@no_cache_read && @channels[id]
 
       begin
         response = API::Channel.resolve(token, id)
@@ -66,7 +82,7 @@ module Discordrb
     # @return [User, nil] The user identified by the ID, or `nil` if it couldn't be found.
     def user(id)
       id = id.resolve_id
-      return @users[id] if @users[id]
+      return @users[id] if !@no_cache_read && @users[id]
 
       LOGGER.out("Resolving user #{id}")
       begin
@@ -84,7 +100,7 @@ module Discordrb
     # @return [Server, nil] The server identified by the ID, or `nil` if it couldn't be found.
     def server(id)
       id = id.resolve_id
-      return @servers[id] if @servers[id]
+      return @servers[id] if !@no_cache_read && @servers[id]
 
       LOGGER.out("Resolving server #{id}")
       begin
@@ -105,7 +121,7 @@ module Discordrb
       user_id = user_id.resolve_id
       server = server_or_id.is_a?(Server) ? server_or_id : self.server(server_id)
 
-      return server.member(user_id) if server.member_cached?(user_id)
+      return server.member(user_id) if !@no_cache_read && server.member_cached?(user_id)
 
       LOGGER.out("Resolving member #{server_id} on server #{user_id}")
       begin
@@ -124,7 +140,7 @@ module Discordrb
     # @return [Channel] A private channel for that user.
     def pm_channel(id)
       id = id.resolve_id
-      return @pm_channels[id] if @pm_channels[id]
+      return @pm_channels[id] if !@no_cache_read && @pm_channels[id]
 
       debug("Creating pm channel with user id #{id}")
       response = API::User.create_pm(token, id)
