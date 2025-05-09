@@ -36,7 +36,7 @@ module Discordrb::Events
         matches_all(@attributes[:invitable], event.thread.invitable) do |a, e|
           a == e
         end,
-        matches_all(@attributes[:owner], event.thread.owner) do |a, e|
+        matches_all(@attributes[:owner], event.thread.owner_id) do |a, e|
           a.resolve_id == e.resolve_id
         end,
         matches_all(@attributes[:channel], event.thread.parent) do |a, e|

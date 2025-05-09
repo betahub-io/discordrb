@@ -231,6 +231,11 @@ module Discordrb
       news_thread? || public_thread? || private_thread?
     end
 
+    # @return [true, false] whether or not this channel is a forum channel.
+    def forum?
+      @type == 15
+    end
+
     # @return [Channel, nil] the category channel, if this channel is in a category
     def category
       @bot.channel(@parent_id) if @parent_id

@@ -264,6 +264,10 @@ module Discordrb
       register_event(ChannelRecipientRemoveEvent, attributes, block)
     end
 
+    def thread_create(attributes = {}, &block)
+      register_event(ThreadCreateEvent, attributes, block)
+    end
+
     # This **event** is raised when a user's voice state changes. This includes when a user joins, leaves, or
     # moves between voice channels, as well as their mute and deaf status for themselves and on the server.
     # @param attributes [Hash] The event's attributes.
