@@ -143,17 +143,21 @@ module Discordrb
     #   @param content [String] The content to send.
     #   @return [Message] the message sent to this user.
     def pm(content = nil, tts = false, embed = nil, attachments = nil, allowed_mentions = nil, message_reference = nil, components = nil)
+      pm2(content: content, tts: tts, embeds: embed, attachments: attachments, allowed_mentions: allowed_mentions, message_reference: message_reference, components: components)
+    end
+
+    alias_method :dm, :pm
+
+    def pm2(content: nil, tts: false, embeds: nil, attachments: nil, allowed_mentions: nil, message_reference: nil, components: nil, flags: nil)
       if content
         # Recursively call pm to get the channel, then send a message to it
         channel = pm
-        channel.send_message(content, tts, embed, attachments, allowed_mentions, message_reference, components)
+        channel.send_message2(content: content, tts: tts, embeds: embeds, attachments: attachments, allowed_mentions: allowed_mentions, message_reference: message_reference, components: components, flags: flags)
       else
         # If no message was specified, return the PM channel
         @bot.pm_channel(@id)
       end
     end
-
-    alias_method :dm, :pm
 
     # Send the user a file.
     # @param file [File] The file to send to the user
