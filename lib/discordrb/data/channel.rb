@@ -437,6 +437,10 @@ module Discordrb
     # @param components [View, Array<Hash>] Interaction components to associate with this message.
     # @return [Message] the message that was sent.
     def send_message(content, tts = false, embed = nil, attachments = nil, allowed_mentions = nil, message_reference = nil, components = nil)
+      send_message2(content: content, tts: tts, embeds: embed, attachments: attachments, allowed_mentions: allowed_mentions, message_reference: message_reference, components: components)
+    end
+
+    def send_message2(content:, tts: false, embeds: nil, attachments: nil, allowed_mentions: nil, message_reference: nil, components: nil, flags: nil)
       @bot.send_message(@id, content, tts, embed, attachments, allowed_mentions, message_reference, components)
     end
 
