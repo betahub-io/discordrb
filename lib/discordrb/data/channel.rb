@@ -441,7 +441,7 @@ module Discordrb
     end
 
     def send_message2(content:, tts: false, embeds: nil, attachments: nil, allowed_mentions: nil, message_reference: nil, components: nil, flags: nil)
-      @bot.send_message(@id, content, tts, embeds, attachments, allowed_mentions, message_reference, components)
+      @bot.send_message(@id, content, tts, embeds, attachments, allowed_mentions, message_reference, components, flags)
     end
 
     alias_method :send, :send_message

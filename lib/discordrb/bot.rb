@@ -402,14 +402,14 @@ module Discordrb
     # @param message_reference [Message, String, Integer, nil] The message, or message ID, to reply to if any.
     # @param components [View, Array<Hash>] Interaction components to associate with this message.
     # @return [Message] The message that was sent.
-    def send_message(channel, content, tts = false, embeds = nil, attachments = nil, allowed_mentions = nil, message_reference = nil, components = nil)
+    def send_message(channel, content, tts = false, embeds = nil, attachments = nil, allowed_mentions = nil, message_reference = nil, components = nil, flags = nil)
       channel = channel.resolve_id
       debug("Sending message to #{channel} with content '#{content}'")
       allowed_mentions = { parse: [] } if allowed_mentions == false
       message_reference = { message_id: message_reference.id } if message_reference.respond_to?(:id)
       embeds = (embeds.instance_of?(Array) ? embeds.map(&:to_hash) : [embeds&.to_hash]).compact
 
-      response = API::Channel.create_message(token, channel, content, tts, embeds, nil, attachments, allowed_mentions&.to_hash, message_reference, components)
+      response = API::Channel.create_message2(token: token, channel_id: channel, message: content, tts: tts, embeds: embeds, nonce: nil, attachments: attachments, allowed_mentions: allowed_mentions&.to_hash, message_reference: message_reference, components: components, flags: flags)
       Message.new(JSON.parse(response), self)
     end
 
@@ -424,11 +424,12 @@ module Discordrb
     # @param allowed_mentions [Hash, Discordrb::AllowedMentions, false, nil] Mentions that are allowed to ping on this message. `false` disables all pings
     # @param message_reference [Message, String, Integer, nil] The message, or message ID, to reply to if any.
     # @param components [View, Array<Hash>] Interaction components to associate with this message.
-    def send_temporary_message(channel, content, timeout, tts = false, embeds = nil, attachments = nil, allowed_mentions = nil, message_reference = nil, components = nil)
+    # @param flags [Integer, nil] Message flags to set for this message.
+    def send_temporary_message(channel, content, timeout, tts = false, embeds = nil, attachments = nil, allowed_mentions = nil, message_reference = nil, components = nil, flags = nil)
       Thread.new do
         Thread.current[:discordrb_name] = "#{@current_thread}-temp-msg"
 
-        message = send_message(channel, content, tts, embeds, attachments, allowed_mentions, message_reference, components)
+        message = send_message(channel, content, tts, embeds, attachments, allowed_mentions, message_reference, components, flags)
         sleep(timeout)
         message.delete
       end
