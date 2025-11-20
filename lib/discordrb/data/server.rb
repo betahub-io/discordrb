@@ -68,6 +68,8 @@ module Discordrb
       @owner_id = data['owner_id'].to_i
       @id = data['id'].to_i
       @members = {}
+      @member_cache_mutex = Mutex.new
+      @member_access_times = {}
       @voice_states = {}
       @emoji = {}
 
@@ -121,11 +123,32 @@ module Discordrb
     # @param request [true, false] Whether the member should be requested from Discord if it's not cached
     def member(id, request = true)
       id = id.resolve_id
-      return @members[id] if member_cached?(id)
+
+      member_cache_mutex.synchronize do
+        if @members[id]
+          member_access_times[id] = Time.now.to_i
+          return @members[id]
+        end
+      end
+
       return nil unless request
 
       member = @bot.member(self, id)
-      @members[id] = member unless member.nil?
+
+      member_cache_mutex.synchronize do
+        # Double-check: another thread may have cached while we were fetching
+        if @members[id]
+          member_access_times[id] = Time.now.to_i
+          return @members[id]
+        end
+
+        unless member.nil?
+          @members[id] = member
+          member_access_times[id] = Time.now.to_i
+        end
+      end
+
+      member
     rescue StandardError
       nil
     end
@@ -133,7 +156,9 @@ module Discordrb
     # @return [Array<Member>] an array of all the members on this server.
     # @raise [RuntimeError] if the bot was not started with the :server_member intent
     def members
-      return @members.values if @chunked
+      member_cache_mutex.synchronize do
+        return @members.values if @chunked
+      end
 
       @bot.debug("Members for server #{@id} not chunked yet - initiating")
 
@@ -141,8 +166,11 @@ module Discordrb
       raise 'The :server_members intent is required to get server members' if (@bot.gateway.intents & INTENTS[:server_members]).zero?
 
       @bot.request_chunks(@id)
-      sleep 0.05 until @chunked
-      @members.values
+      sleep 0.05 until member_cache_mutex.synchronize { @chunked }
+
+      member_cache_mutex.synchronize do
+        @members.values
+      end
     end
 
     alias_method :users, :members
@@ -423,30 +451,41 @@ module Discordrb
     # @note For internal use only
     # @!visibility private
     def add_member(member)
-      @member_count += 1
-      @members[member.id] = member
+      member_cache_mutex.synchronize do
+        @member_count += 1
+        @members[member.id] = member
+        member_access_times[member.id] = Time.now.to_i
+      end
     end
 
     # Removes a member from the member cache.
     # @note For internal use only
     # @!visibility private
     def delete_member(user_id)
-      @members.delete(user_id)
-      @member_count -= 1 unless @member_count <= 0
+      member_cache_mutex.synchronize do
+        @members.delete(user_id)
+        member_access_times.delete(user_id)
+        @member_count -= 1 unless @member_count <= 0
+      end
     end
 
     # Checks whether a member is cached
     # @note For internal use only
     # @!visibility private
     def member_cached?(user_id)
-      @members.include?(user_id)
+      member_cache_mutex.synchronize do
+        @members.include?(user_id)
+      end
     end
 
     # Adds a member to the cache
     # @note For internal use only
     # @!visibility private
     def cache_member(member)
-      @members[member.id] = member
+      member_cache_mutex.synchronize do
+        @members[member.id] = member
+        member_access_times[member.id] = Time.now.to_i
+      end
     end
 
     # Updates a member's voice state
@@ -818,7 +857,9 @@ module Discordrb
       LOGGER.debug("Finished chunking server #{@id}")
 
       # Reset everything to normal
-      @chunked = true
+      member_cache_mutex.synchronize do
+        @chunked = true
+      end
     end
 
     # @return [Channel, nil] the AFK voice channel of this server, or `nil` if none is set.
@@ -898,7 +939,34 @@ module Discordrb
       "<Server name=#{@name} id=#{@id} large=#{@large} region=#{@region} owner=#{@owner} afk_channel_id=#{@afk_channel_id} system_channel_id=#{@system_channel_id} afk_timeout=#{@afk_timeout}>"
     end
 
+    # Removes members from cache that haven't been accessed within the max_age period.
+    # @param max_age [Integer] Maximum age in seconds before a member is considered stale (default: 6 hours)
+    # @return [Integer] The number of members removed from cache
+    def cleanup_stale_members(max_age = 21600)
+      cutoff = Time.now.to_i - max_age
+
+      member_cache_mutex.synchronize do
+        stale_ids = member_access_times.select { |_, time| time && time < cutoff }.keys
+        stale_ids.each do |id|
+          @members.delete(id)
+          member_access_times.delete(id)
+        end
+        stale_ids.size
+      end
+    rescue StandardError => e
+      LOGGER.error("Member cache cleanup failed for server #{@id}: #{e.message}")
+      0
+    end
+
     private
+
+    def member_cache_mutex
+      @member_cache_mutex
+    end
+
+    def member_access_times
+      @member_access_times
+    end
 
     def update_server_data(new_data)
       response = JSON.parse(API::Server.update(@bot.token, @id,
@@ -941,9 +1009,13 @@ module Discordrb
     def process_members(members)
       return unless members
 
-      members.each do |element|
-        member = Member.new(element, self, @bot)
-        @members[member.id] = member
+      current_time = Time.now.to_i
+      member_cache_mutex.synchronize do
+        members.each do |element|
+          member = Member.new(element, self, @bot)
+          @members[member.id] = member
+          member_access_times[member.id] = current_time
+        end
       end
     end
 

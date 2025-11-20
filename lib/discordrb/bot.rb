@@ -1395,7 +1395,7 @@ module Discordrb
         return unless data['guild_id']
 
         new_activities = (data['activities'] || []).map { |act_data| Activity.new(act_data, self) }
-        presence_user = @users[data['user']['id'].to_i]
+        presence_user = user(data['user']['id'].to_i)
         old_activities = (presence_user&.activities || [])
         update_presence(data)
 

@@ -14,6 +14,8 @@ module Discordrb
     # Initializes this cache
     def init_cache
       @users = {}
+      @user_access_times = {}
+      @user_cache_mutex = Mutex.new
 
       @voice_regions = {}
 
@@ -22,7 +24,7 @@ module Discordrb
       @channels = {}
       @pm_channels = {}
       @thread_members = {}
-      
+
       @no_cache_read = false
     end
 
@@ -82,7 +84,13 @@ module Discordrb
     # @return [User, nil] The user identified by the ID, or `nil` if it couldn't be found.
     def user(id)
       id = id.resolve_id
-      return @users[id] if !@no_cache_read && @users[id]
+
+      @user_cache_mutex.synchronize do
+        if !@no_cache_read && @users[id]
+          @user_access_times[id] = Time.now.to_i
+          return @users[id]
+        end
+      end
 
       LOGGER.out("Resolving user #{id}")
       begin
@@ -90,8 +98,21 @@ module Discordrb
       rescue Discordrb::Errors::UnknownUser
         return nil
       end
+
       user = User.new(JSON.parse(response), self)
-      @users[id] = user
+
+      @user_cache_mutex.synchronize do
+        # Double-check: another thread may have cached while we were fetching
+        if @users[id]
+          @user_access_times[id] = Time.now.to_i
+          return @users[id]
+        end
+
+        @users[id] = user
+        @user_access_times[id] = Time.now.to_i
+      end
+
+      user
     end
 
     # Gets a server by its ID.
@@ -121,7 +142,10 @@ module Discordrb
       user_id = user_id.resolve_id
       server = server_or_id.is_a?(Server) ? server_or_id : self.server(server_id)
 
-      return server.member(user_id) if !@no_cache_read && server.member_cached?(user_id)
+      if !@no_cache_read
+        cached_member = server.member(user_id, false)
+        return cached_member if cached_member
+      end
 
       LOGGER.out("Resolving member #{server_id} on server #{user_id}")
       begin
@@ -131,6 +155,7 @@ module Discordrb
       end
       member = Member.new(JSON.parse(response), server, self)
       server.cache_member(member)
+      member
     end
 
     # Creates a PM channel for the given user ID, or if one exists already, returns that one.
@@ -154,10 +179,15 @@ module Discordrb
     # @param data [Hash] A data hash representing a user.
     # @return [User] the user represented by the data hash.
     def ensure_user(data)
-      if @users.include?(data['id'].to_i)
-        @users[data['id'].to_i]
-      else
-        @users[data['id'].to_i] = User.new(data, self)
+      id = data['id'].to_i
+
+      @user_cache_mutex.synchronize do
+        @user_access_times[id] = Time.now.to_i
+        if @users.include?(id)
+          @users[id]
+        else
+          @users[id] = User.new(data, self)
+        end
       end
     end
 
@@ -268,10 +298,31 @@ module Discordrb
     # @example Find a user by name and discriminator
     #   bot.find_user('z64', '2639') #=> User
     def find_user(username, discrim = nil)
-      users = @users.values.find_all { |e| e.username == username }
-      return users.find { |u| u.discrim == discrim } if discrim
+      @user_cache_mutex.synchronize do
+        users = @users.values.find_all { |e| e.username == username }
+        return users.find { |u| u.discrim == discrim } if discrim
 
-      users
+        users
+      end
+    end
+
+    # Removes users from cache that haven't been accessed within the max_age period.
+    # @param max_age [Integer] Maximum age in seconds before a user is considered stale (default: 6 hours)
+    # @return [Integer] The number of users removed from cache
+    def cleanup_stale_users(max_age = 21600)
+      cutoff = Time.now.to_i - max_age
+
+      @user_cache_mutex.synchronize do
+        stale_ids = @user_access_times.select { |_, time| time && time < cutoff }.keys
+        stale_ids.each do |id|
+          @users.delete(id)
+          @user_access_times.delete(id)
+        end
+        stale_ids.size
+      end
+    rescue StandardError => e
+      LOGGER.error("User cache cleanup failed: #{e.message}")
+      0
     end
   end
 end
