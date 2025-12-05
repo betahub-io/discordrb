@@ -1098,8 +1098,20 @@ module Discordrb
     def update_guild_member(data)
       server_id = data['guild_id'].to_i
       server = self.server(server_id)
+      return unless server
 
-      member = server.member(data['user']['id'].to_i)
+      user_id = data['user']['id'].to_i
+
+      # Check cache WITHOUT fetching from API (request = false)
+      member = server.member(user_id, false)
+
+      # If not cached, create from event data (like GUILD_MEMBER_ADD does)
+      unless member
+        member = Member.new(data, server, self)
+        server.cache_member(member)
+      end
+
+      # Update member properties
       member.update_roles(data['roles'])
       member.update_nick(data['nick'])
       member.update_global_name(data['user']['global_name']) if data['user']['global_name']
