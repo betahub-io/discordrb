@@ -92,6 +92,114 @@ describe 'Cache cleanup and access time tracking' do
     end
   end
 
+  describe 'negative user cache' do
+    before do
+      bot.instance_variable_set(:@users, {})
+      bot.instance_variable_set(:@user_access_times, {})
+      bot.instance_variable_set(:@negative_user_cache, {})
+      bot.instance_variable_set(:@no_cache_read, false)
+    end
+
+    it 'caches unknown users to avoid repeated API calls' do
+      # First call: API returns UnknownUser, should be negatively cached
+      allow(Discordrb::API::User).to receive(:resolve).and_raise(Discordrb::Errors::UnknownUser.new('Unknown User'))
+
+      result1 = bot.user(999)
+      expect(result1).to be_nil
+
+      # Second call: should NOT hit the API again (negative cache hit)
+      result2 = bot.user(999)
+      expect(result2).to be_nil
+
+      expect(Discordrb::API::User).to have_received(:resolve).once
+    end
+
+    it 'expires negative cache entries after TTL' do
+      allow(Discordrb::API::User).to receive(:resolve).and_raise(Discordrb::Errors::UnknownUser.new('Unknown User'))
+
+      bot.user(999)
+
+      # Simulate TTL expiration
+      bot.instance_variable_get(:@negative_user_cache)[999] = Time.now.to_i - Discordrb::Cache::NEGATIVE_USER_CACHE_TTL - 1
+
+      bot.user(999)
+
+      expect(Discordrb::API::User).to have_received(:resolve).twice
+    end
+
+    it 'clears negative cache when ensure_user is called' do
+      # Negatively cache user 999
+      bot.instance_variable_get(:@negative_user_cache)[999] = Time.now.to_i
+
+      # Simulate user joining (ensure_user called from GUILD_MEMBER_ADD)
+      user_data = { 'id' => '999', 'username' => 'test_user', 'discriminator' => '0', 'avatar' => nil }
+      bot.ensure_user(user_data)
+
+      negative_cache = bot.instance_variable_get(:@negative_user_cache)
+      expect(negative_cache).not_to have_key(999)
+
+      users = bot.instance_variable_get(:@users)
+      expect(users).to have_key(999)
+    end
+
+    it 'returns real user when resolved successfully even if negatively cached' do
+      # Negatively cache user 888
+      bot.instance_variable_get(:@negative_user_cache)[888] = Time.now.to_i - Discordrb::Cache::NEGATIVE_USER_CACHE_TTL - 1
+
+      user_response = { 'id' => '888', 'username' => 'real_user', 'discriminator' => '0', 'avatar' => nil }.to_json
+      allow(Discordrb::API::User).to receive(:resolve).and_return(user_response)
+
+      result = bot.user(888)
+
+      expect(result).to be_a(Discordrb::User)
+      expect(result.username).to eq('real_user')
+
+      # Negative cache should be cleared
+      negative_cache = bot.instance_variable_get(:@negative_user_cache)
+      expect(negative_cache).not_to have_key(888)
+    end
+
+    it 'cleans up expired negative cache entries during stale user cleanup' do
+      now = Time.now.to_i
+      bot.instance_variable_set(:@negative_user_cache, {
+        100 => now - Discordrb::Cache::NEGATIVE_USER_CACHE_TTL - 60, # expired
+        200 => now - 10 # still fresh
+      })
+
+      bot.cleanup_stale_users(86400) # large threshold so no positive users removed
+
+      negative_cache = bot.instance_variable_get(:@negative_user_cache)
+      expect(negative_cache).not_to have_key(100)
+      expect(negative_cache).to have_key(200)
+    end
+
+    it 'does not negatively cache when another thread resolved the user concurrently' do
+      # Set up: first resolve raises UnknownUser, but by the time we check,
+      # another thread has populated the positive cache
+      test_user = double('test_user', id: 999)
+      call_count = 0
+
+      allow(Discordrb::API::User).to receive(:resolve) do
+        call_count += 1
+        # Simulate another thread caching the user between API call and negative cache write
+        if call_count == 1
+          bot.instance_variable_get(:@users)[999] = test_user
+          bot.instance_variable_get(:@user_access_times)[999] = Time.now.to_i
+        end
+        raise Discordrb::Errors::UnknownUser.new('Unknown User')
+      end
+
+      result = bot.user(999)
+
+      # Should return the user that was cached by the "other thread"
+      expect(result).to eq(test_user)
+
+      # Should NOT have negatively cached since the user was found
+      negative_cache = bot.instance_variable_get(:@negative_user_cache)
+      expect(negative_cache).not_to have_key(999)
+    end
+  end
+
   describe Discordrb::Server do
     fixture :server_data, %i[emoji emoji_server]
 

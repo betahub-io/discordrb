@@ -11,10 +11,14 @@ module Discordrb
   # the caching (like, storing the user hashes or making API calls to retrieve things) from the Bot that
   # actually uses it.
   module Cache
+    # Time in seconds before a negative user cache entry expires and allows a fresh API lookup.
+    NEGATIVE_USER_CACHE_TTL = 300 # 5 minutes
+
     # Initializes this cache
     def init_cache
       @users = {}
       @user_access_times = {}
+      @negative_user_cache = {} # Stores user_id => timestamp for users confirmed as unknown
       @user_cache_mutex = Mutex.new
 
       @voice_regions = {}
@@ -90,12 +94,30 @@ module Discordrb
           @user_access_times[id] = Time.now.to_i
           return @users[id]
         end
+
+        # Check negative cache — skip API call if user was recently confirmed unknown
+        if !@no_cache_read && @negative_user_cache[id]
+          if Time.now.to_i - @negative_user_cache[id] < NEGATIVE_USER_CACHE_TTL
+            return nil
+          else
+            @negative_user_cache.delete(id)
+          end
+        end
       end
 
       LOGGER.out("Resolving user #{id}")
       begin
         response = API::User.resolve(token, id)
       rescue Discordrb::Errors::UnknownUser
+        @user_cache_mutex.synchronize do
+          # Another thread may have resolved this user while we were fetching
+          if @users[id]
+            @user_access_times[id] = Time.now.to_i
+            return @users[id]
+          end
+
+          @negative_user_cache[id] = Time.now.to_i
+        end
         return nil
       end
 
@@ -108,6 +130,7 @@ module Discordrb
           return @users[id]
         end
 
+        @negative_user_cache.delete(id) # Clear negative entry if one existed
         @users[id] = user
         @user_access_times[id] = Time.now.to_i
       end
@@ -182,6 +205,7 @@ module Discordrb
       id = data['id'].to_i
 
       @user_cache_mutex.synchronize do
+        @negative_user_cache.delete(id) # Clear negative cache — this user is now confirmed real
         @user_access_times[id] = Time.now.to_i
         if @users.include?(id)
           @users[id]
@@ -307,6 +331,7 @@ module Discordrb
     end
 
     # Removes users from cache that haven't been accessed within the max_age period.
+    # Also cleans up expired negative cache entries.
     # @param max_age [Integer] Maximum age in seconds before a user is considered stale (default: 6 hours)
     # @return [Integer] The number of users removed from cache
     def cleanup_stale_users(max_age = 21600)
@@ -318,6 +343,11 @@ module Discordrb
           @users.delete(id)
           @user_access_times.delete(id)
         end
+
+        # Clean up expired negative cache entries
+        negative_cutoff = Time.now.to_i - NEGATIVE_USER_CACHE_TTL
+        @negative_user_cache.delete_if { |_, time| time < negative_cutoff }
+
         stale_ids.size
       end
     rescue StandardError => e
