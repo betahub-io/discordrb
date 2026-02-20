@@ -115,8 +115,9 @@ class Discordrb::Webhooks::View
     # @param min_values [Integer, nil] The minimum amount of values a user must select.
     # @param max_values [Integer, nil] The maximum amount of values a user can select.
     # @param disabled [true, false, nil] Grey out the component to make it unusable.
-    def channel_select(custom_id:, placeholder: nil, min_values: nil, max_values: nil, disabled: nil)
-      @components << SelectMenuBuilder.new(custom_id, [], placeholder, min_values, max_values, disabled, select_type: :channel_select).to_h
+    # @param default_values [Array<String, Integer>, nil] Default channel IDs to pre-select.
+    def channel_select(custom_id:, placeholder: nil, min_values: nil, max_values: nil, disabled: nil, default_values: nil)
+      @components << SelectMenuBuilder.new(custom_id, [], placeholder, min_values, max_values, disabled, select_type: :channel_select, default_values: default_values).to_h
     end
 
     # @!visibility private
@@ -128,7 +129,7 @@ class Discordrb::Webhooks::View
   # A builder to assist in adding options to select menus.
   class SelectMenuBuilder
     # @!visibility hidden
-    def initialize(custom_id, options = [], placeholder = nil, min_values = nil, max_values = nil, disabled = nil, select_type: :string_select)
+    def initialize(custom_id, options = [], placeholder = nil, min_values = nil, max_values = nil, disabled = nil, select_type: :string_select, default_values: nil)
       @custom_id = custom_id
       @options = options
       @placeholder = placeholder
@@ -136,6 +137,7 @@ class Discordrb::Webhooks::View
       @max_values = max_values
       @disabled = disabled
       @select_type = select_type
+      @default_values = default_values
     end
 
     # Add an option to this select menu.
@@ -158,7 +160,7 @@ class Discordrb::Webhooks::View
 
     # @!visibility private
     def to_h
-      {
+      hash = {
         type: COMPONENT_TYPES[@select_type],
         options: @options,
         placeholder: @placeholder,
@@ -167,7 +169,20 @@ class Discordrb::Webhooks::View
         custom_id: @custom_id,
         disabled: @disabled
       }
+
+      if @default_values&.any?
+        default_type = SELECT_TYPE_TO_DEFAULT_VALUE_TYPE[@select_type]
+        hash[:default_values] = @default_values.map { |id| { id: id.to_s, type: default_type } } if default_type
+      end
+
+      hash
     end
+
+    SELECT_TYPE_TO_DEFAULT_VALUE_TYPE = {
+      channel_select: 'channel',
+      user_select: 'user',
+      role_select: 'role'
+    }.freeze
   end
 
   attr_reader :rows
