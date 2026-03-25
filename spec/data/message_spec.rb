@@ -47,6 +47,39 @@ describe Discordrb::Message do
       described_class.new(message_data, bot)
     end
 
+    context 'when member data is present but member is not cached' do
+      let(:member_data_hash) do
+        {
+          'roles' => [],
+          'premium_since' => nil,
+          'pending' => false,
+          'nick' => nil,
+          'mute' => false,
+          'joined_at' => '2026-03-24T18:51:50.932925+00:00',
+          'flags' => 0,
+          'deaf' => false,
+          'communication_disabled_until' => nil,
+          'banner' => nil,
+          'avatar' => nil
+        }
+      end
+
+      let(:message_data_with_member) do
+        message_data.merge('member' => member_data_hash)
+      end
+
+      it 'creates a Member without crashing' do
+        allow(server).to receive(:member).and_return(nil)
+        allow(channel).to receive(:private?).and_return(false)
+        allow(channel).to receive(:text?).and_return(true)
+
+        user = double('user')
+        allow(bot).to receive(:ensure_user).with(message_author).and_return(user)
+
+        expect { described_class.new(message_data_with_member, bot) }.not_to raise_error
+      end
+    end
+
     it 'stores raw data' do
       message = described_class.new(message_data, bot)
       expect(message.instance_variable_get(:@data)).to eq(message_data)
