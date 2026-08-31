@@ -78,6 +78,38 @@ describe Discordrb::Message do
 
         expect { described_class.new(message_data_with_member, bot) }.not_to raise_error
       end
+
+      it 'resolves the author cache-only, never fetching a member from the API on the dispatch thread' do
+        allow(channel).to receive(:private?).and_return(false)
+        allow(channel).to receive(:text?).and_return(true)
+        # Member.new builds its User from the embedded payload via ensure_user (no REST).
+        allow(bot).to receive(:ensure_user).and_return(double('user'))
+
+        # The fix: request: false (cache-only). A REST member fetch here runs on the single
+        # gateway dispatch thread and head-of-line-blocks following packets (interactions
+        # included). On a miss the author is built from the embedded member payload. The old
+        # code called member(id) with one argument and would fail this expectation.
+        expect(server).to receive(:member).with(anything, false).and_return(nil)
+
+        message = described_class.new(message_data_with_member, bot)
+        expect(message.author).to be_a(Discordrb::Member)
+      end
+
+      it 'degrades to a roleless author (never drops the message) when building the embedded member raises' do
+        allow(server).to receive(:member).and_return(nil)
+        allow(channel).to receive(:private?).and_return(false)
+        allow(channel).to receive(:text?).and_return(true)
+
+        # A malformed embedded member must not sink the whole MESSAGE_CREATE on the gateway
+        # dispatch thread; it falls back to a plain User via #ensure_user.
+        fallback = double('user')
+        allow(Discordrb::Member).to receive(:new).and_raise(StandardError, 'malformed member')
+        expect(bot).to receive(:ensure_user).with(message_author).and_return(fallback)
+
+        message = nil
+        expect { message = described_class.new(message_data_with_member, bot) }.not_to raise_error
+        expect(message.author).to eq(fallback)
+      end
     end
 
     it 'stores raw data' do

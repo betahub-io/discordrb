@@ -21,15 +21,23 @@ module Discordrb::Events
       @user_id = data['user_id'].to_i
       @message_id = data['message_id'].to_i
       @channel_id = data['channel_id'].to_i
+      # Guild reaction-add payloads embed the full member object (including its user);
+      # kept so #user can resolve without a REST fetch (see #user).
+      @member_data = data['member']
 
       super(data, bot)
     end
 
     # @return [User, Member] the user that reacted to this message, or member if a server exists.
     def user
-      # Cache the user so we don't do requests all the time
+      # Resolve WITHOUT a blocking REST fetch. ReactionEventHandler#matches? eagerly
+      # evaluates event.user, and #matches? runs synchronously on the single gateway
+      # dispatch thread — so a cache-miss REST member fetch here head-of-line-blocks every
+      # following packet (INTERACTION_CREATE included) and makes interactions miss the 3s
+      # deadline. Use the cache, then the embedded member payload, and only fall back to a
+      # (rarer) user fetch.
       @user ||= if server
-                  @server.member(@user_id)
+                  @server.member(@user_id, false) || member_from_payload || @bot.user(@user_id)
                 else
                   @bot.user(@user_id)
                 end
@@ -48,6 +56,19 @@ module Discordrb::Events
     # @return [Server, nil] the server that was reacted in. If reacted in a PM channel, it will be nil.
     def server
       @server ||= channel.server
+    end
+
+    private
+
+    # Builds a Member from the embedded gateway member payload (present on guild
+    # reaction-adds), avoiding a REST member fetch on the dispatch thread. Returns nil if
+    # the payload is missing or malformed.
+    def member_from_payload
+      return nil unless @member_data && @member_data['user']
+
+      Discordrb::Member.new(@member_data, @server, @bot)
+    rescue StandardError
+      nil
     end
   end
 

@@ -102,19 +102,30 @@ module Discordrb
                     # directly because the bot may also send messages to the channel
                     Recipient.new(bot.user(data['author']['id'].to_i), @channel, bot)
                   else
-                    member = @channel.server.member(data['author']['id'].to_i)
+                    # Resolve the author WITHOUT a blocking REST fetch. A cache-miss fetch
+                    # here runs synchronously on the single gateway dispatch thread and, under
+                    # load, head-of-line-blocks every packet behind it (INTERACTION_CREATE
+                    # included), causing interactions to miss Discord's 3s deadline. Guild
+                    # MESSAGE_CREATE payloads embed the member object, so build from that on a
+                    # miss — no REST on the dispatch thread.
+                    member = @channel.server.member(data['author']['id'].to_i, false)
 
                     if member
                       member.update_data(data['member']) if data['member']
                       member.update_global_name(data['author']['global_name']) if data['author']['global_name']
+                    elsif data['member']
+                      member_data = data['member'].merge('user' => data['author'])
+                      member = begin
+                        Member.new(member_data, @server, bot)
+                      rescue StandardError
+                        # A malformed/partial embedded member must not sink the whole message
+                        # (this runs on the gateway dispatch thread). Degrade to a roleless
+                        # author instead of dropping the event.
+                        @bot.ensure_user(data['author'])
+                      end
                     else
-                      Discordrb::LOGGER.debug("Member with ID #{data['author']['id']} not cached (possibly left the server).")
-                      member = if data['member']
-                               member_data = data['member'].merge('user' => data['author'])
-                               Member.new(member_data, @server, bot)
-                             else
-                               @bot.ensure_user(data['author'])
-                             end
+                      Discordrb::LOGGER.debug("Member with ID #{data['author']['id']} not cached and no member data in payload (author likely left the server).")
+                      member = @bot.ensure_user(data['author'])
                     end
 
                     member
