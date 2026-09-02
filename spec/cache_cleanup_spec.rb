@@ -200,6 +200,66 @@ describe 'Cache cleanup and access time tracking' do
     end
   end
 
+  describe 'negative member cache' do
+    fixture :server_data, %i[emoji emoji_server]
+
+    let(:server) { Discordrb::Server.new(server_data, bot) }
+
+    before do
+      bot.instance_variable_set(:@negative_member_cache, {})
+      bot.instance_variable_set(:@no_cache_read, false)
+      allow(server).to receive(:member).with(anything, false).and_return(nil) # force cache miss
+      allow(server).to receive(:cache_member)
+    end
+
+    it 'caches absent members to avoid repeated API calls' do
+      allow(Discordrb::API::Server).to receive(:resolve_member)
+        .and_raise(Discordrb::Errors::UnknownMember.new('Unknown Member'))
+
+      expect(bot.member(server, 999)).to be_nil
+      expect(bot.member(server, 999)).to be_nil # negative cache hit — no second API call
+
+      expect(Discordrb::API::Server).to have_received(:resolve_member).once
+    end
+
+    it 'expires negative member cache entries after TTL' do
+      allow(Discordrb::API::Server).to receive(:resolve_member)
+        .and_raise(Discordrb::Errors::UnknownMember.new('Unknown Member'))
+
+      bot.member(server, 999)
+      bot.instance_variable_get(:@negative_member_cache)[[server.id, 999]] =
+        Time.now.to_i - Discordrb::Cache::NEGATIVE_MEMBER_CACHE_TTL - 1
+      bot.member(server, 999)
+
+      expect(Discordrb::API::Server).to have_received(:resolve_member).twice
+    end
+
+    it 'clears the negative entry once the member resolves successfully' do
+      bot.instance_variable_get(:@negative_member_cache)[[server.id, 888]] =
+        Time.now.to_i - Discordrb::Cache::NEGATIVE_MEMBER_CACHE_TTL - 1
+      member_response = { 'user' => { 'id' => '888', 'username' => 'peer', 'discriminator' => '0', 'avatar' => nil },
+                          'roles' => [] }.to_json
+      allow(Discordrb::API::Server).to receive(:resolve_member).and_return(member_response)
+
+      expect(bot.member(server, 888)).to be_a(Discordrb::Member)
+      expect(bot.instance_variable_get(:@negative_member_cache)).not_to have_key([server.id, 888])
+    end
+
+    it 'cleans up expired negative member cache entries during stale user cleanup' do
+      now = Time.now.to_i
+      bot.instance_variable_set(:@negative_member_cache, {
+                                  [1, 100] => now - Discordrb::Cache::NEGATIVE_MEMBER_CACHE_TTL - 60, # expired
+                                  [1, 200] => now - 10 # fresh
+                                })
+
+      bot.cleanup_stale_users(86_400) # large threshold so no positive users removed
+
+      cache = bot.instance_variable_get(:@negative_member_cache)
+      expect(cache).not_to have_key([1, 100])
+      expect(cache).to have_key([1, 200])
+    end
+  end
+
   describe Discordrb::Server do
     fixture :server_data, %i[emoji emoji_server]
 

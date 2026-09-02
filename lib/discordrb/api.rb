@@ -89,6 +89,15 @@ module Discordrb::API
     retry
   end
 
+  # Discord counts 401/403/429 responses toward a per-IP invalid-request limit
+  # (10k/10min); tripping it gets the whole IP Cloudflare-banned for up to an hour,
+  # taking down every bot sharing that IP. An unbounded retry loop on 429s — especially
+  # with a retry_after of 0 — manufactures exactly those invalid requests, so cap the
+  # retries and never busy-retry.
+  MAX_RATE_LIMIT_RETRIES = 10
+  # Floor (seconds) for a 429 wait, so a retry_after of 0 can't become a hot loop.
+  MIN_RATE_LIMIT_BACKOFF = 0.5
+
   # Make an API request, including rate limit handling.
   def request(key, major_parameter, type, *attributes)
     # Add a custom user agent
@@ -97,6 +106,8 @@ module Discordrb::API
     # The most recent Discord rate limit requirements require the support of major parameters, where a particular route
     # and major parameter combination (*not* the HTTP method) uniquely identifies a RL bucket.
     key = [key, major_parameter].freeze
+
+    rate_limit_retries = 0
 
     begin
       mutex = @mutexes[key] ||= Mutex.new
@@ -141,10 +152,21 @@ module Discordrb::API
       # If the 429 is from the global RL, then we have to use the global mutex instead.
       mutex = @global_mutex if e.response.headers[:x_ratelimit_global] == 'true'
 
+      rate_limit_retries += 1
+      if rate_limit_retries > MAX_RATE_LIMIT_RETRIES
+        Discordrb::LOGGER.error("Giving up on request (key: #{key}) after #{MAX_RATE_LIMIT_RETRIES} " \
+                                'rate-limit retries; re-raising instead of a runaway 429 loop')
+        raise e
+      end
+
       unless mutex.locked?
         response = JSON.parse(e.response)
         wait_seconds = response['retry_after'] ? response['retry_after'].to_f : e.response.headers[:retry_after].to_i
-        Discordrb::LOGGER.ratelimit("Locking RL mutex (key: #{key}) for #{wait_seconds} seconds due to Discord rate limiting")
+        # Never busy-retry: a retry_after of 0 with a locked-out IP is how a single bad
+        # bucket snowballs into an invalid-request storm.
+        wait_seconds = MIN_RATE_LIMIT_BACKOFF if wait_seconds < MIN_RATE_LIMIT_BACKOFF
+        Discordrb::LOGGER.ratelimit("Locking RL mutex (key: #{key}) for #{wait_seconds} seconds due to Discord " \
+                                    "rate limiting (retry #{rate_limit_retries}/#{MAX_RATE_LIMIT_RETRIES})")
         trace("429 #{key.join(' ')}")
 
         # Wait the required time synchronized by the mutex (so other incoming requests have to wait) but only do it if

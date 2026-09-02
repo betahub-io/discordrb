@@ -14,12 +14,22 @@ module Discordrb
     # Time in seconds before a negative user cache entry expires and allows a fresh API lookup.
     NEGATIVE_USER_CACHE_TTL = 300 # 5 minutes
 
+    # Time in seconds before a negative member cache entry expires. Shorter than the user
+    # TTL because membership changes (a peer joining a guild) should be picked up quickly;
+    # long enough to stop a repeatedly-checked absent member from re-hitting the API.
+    NEGATIVE_MEMBER_CACHE_TTL = 60
+
     # Initializes this cache
     def init_cache
       @users = {}
       @user_access_times = {}
       @negative_user_cache = {} # Stores user_id => timestamp for users confirmed as unknown
       @user_cache_mutex = Mutex.new
+
+      # Stores [server_id, user_id] => timestamp for members confirmed absent, so a hot
+      # loop of presence checks for an absent member can't storm the API into a rate ban.
+      @negative_member_cache = {}
+      @negative_member_cache_mutex = Mutex.new
 
       @voice_regions = {}
 
@@ -168,16 +178,33 @@ module Discordrb
       if !@no_cache_read
         cached_member = server.member(user_id, false)
         return cached_member if cached_member
+
+        # Negative cache: skip the REST lookup if this member was recently confirmed
+        # absent, so repeated presence checks for an absent member (e.g. a proxy peer
+        # not in this guild) can't spin up a storm of 404/429 requests.
+        neg_key = [server_id, user_id]
+        @negative_member_cache_mutex.synchronize do
+          ts = @negative_member_cache[neg_key]
+          if ts
+            return nil if Time.now.to_i - ts < NEGATIVE_MEMBER_CACHE_TTL
+
+            @negative_member_cache.delete(neg_key)
+          end
+        end
       end
 
-      LOGGER.out("Resolving member #{server_id} on server #{user_id}")
+      LOGGER.out("Resolving member #{user_id} on server #{server_id}")
       begin
         response = API::Server.resolve_member(token, server_id, user_id)
       rescue Discordrb::Errors::UnknownUser, Discordrb::Errors::UnknownMember
+        @negative_member_cache_mutex.synchronize do
+          @negative_member_cache[[server_id, user_id]] = Time.now.to_i
+        end
         return nil
       end
       member = Member.new(JSON.parse(response), server, self)
       server.cache_member(member)
+      @negative_member_cache_mutex.synchronize { @negative_member_cache.delete([server_id, user_id]) }
       member
     end
 
@@ -353,6 +380,11 @@ module Discordrb
     rescue StandardError => e
       LOGGER.error("User cache cleanup failed: #{e.message}")
       0
+    ensure
+      member_negative_cutoff = Time.now.to_i - NEGATIVE_MEMBER_CACHE_TTL
+      @negative_member_cache_mutex.synchronize do
+        @negative_member_cache.delete_if { |_, time| time < member_negative_cutoff }
+      end
     end
   end
 end
