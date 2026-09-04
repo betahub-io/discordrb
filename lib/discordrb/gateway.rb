@@ -533,8 +533,26 @@ module Discordrb
     end
 
     def find_gateway
-      response = API.gateway(@token)
-      JSON.parse(response)['url']
+      # Use /gateway/bot (not /gateway) so we also get session_start_limit — the per-token
+      # identify budget. Logging it on every connect lets us distinguish a per-token
+      # session-start exhaustion from a per-IP/edge block when connects start failing.
+      response = JSON.parse(API.gateway_bot(@token))
+      log_session_start_limit(response['session_start_limit'])
+      response['url']
+    rescue JSON::ParserError => e
+      # A non-JSON body here means an edge/Cloudflare response, not Discord — surface it.
+      LOGGER.warn("find_gateway got a non-JSON /gateway/bot response (#{e.message}); the raw 429/edge " \
+                  'diagnostics are logged by the API layer')
+      raise
+    end
+
+    def log_session_start_limit(limit)
+      return unless limit
+
+      LOGGER.info("session_start_limit: remaining=#{limit['remaining']}/#{limit['total']} " \
+                  "reset_after_ms=#{limit['reset_after']} max_concurrency=#{limit['max_concurrency']}")
+    rescue StandardError
+      nil
     end
 
     def process_gateway

@@ -97,6 +97,9 @@ module Discordrb::API
   MAX_RATE_LIMIT_RETRIES = 10
   # Floor (seconds) for a 429 wait, so a retry_after of 0 can't become a hot loop.
   MIN_RATE_LIMIT_BACKOFF = 0.5
+  # A 429 lock longer than this is not an ordinary per-route limit (those are
+  # sub-second); it signals a per-IP / global / Cloudflare-edge block. Warn loudly.
+  LONG_RATE_LIMIT_WARN_SECONDS = 60
 
   # Make an API request, including rate limit handling.
   def request(key, major_parameter, type, *attributes)
@@ -149,6 +152,10 @@ module Discordrb::API
         end
       end
     rescue RestClient::TooManyRequests => e
+      # Log the raw 429 so a per-IP / global / Cloudflare-edge block (error 1015, cf-ray)
+      # can be told apart from an ordinary per-route Discord limit after the fact.
+      log_rate_limit_diagnostics(key, e.response)
+
       # If the 429 is from the global RL, then we have to use the global mutex instead.
       mutex = @global_mutex if e.response.headers[:x_ratelimit_global] == 'true'
 
@@ -160,11 +167,20 @@ module Discordrb::API
       end
 
       unless mutex.locked?
-        response = JSON.parse(e.response)
-        wait_seconds = response['retry_after'] ? response['retry_after'].to_f : e.response.headers[:retry_after].to_i
+        # A Cloudflare / edge block returns an HTML body, not JSON — don't let parsing it raise.
+        body = begin
+          JSON.parse(e.response)
+        rescue JSON::ParserError
+          {}
+        end
+        wait_seconds = body['retry_after'] ? body['retry_after'].to_f : e.response.headers[:retry_after].to_i
         # Never busy-retry: a retry_after of 0 with a locked-out IP is how a single bad
         # bucket snowballs into an invalid-request storm.
         wait_seconds = MIN_RATE_LIMIT_BACKOFF if wait_seconds < MIN_RATE_LIMIT_BACKOFF
+        if wait_seconds > LONG_RATE_LIMIT_WARN_SECONDS
+          Discordrb::LOGGER.warn("Long rate-limit lock (key: #{key}): #{wait_seconds}s — this is a per-IP/global " \
+                                 'block, not a per-route limit; see the 429 diagnostics logged above')
+        end
         Discordrb::LOGGER.ratelimit("Locking RL mutex (key: #{key}) for #{wait_seconds} seconds due to Discord " \
                                     "rate limiting (retry #{rate_limit_retries}/#{MAX_RATE_LIMIT_RETRIES})")
         trace("429 #{key.join(' ')}")
@@ -187,6 +203,30 @@ module Discordrb::API
     delta = headers[:x_ratelimit_reset_after].to_f
     Discordrb::LOGGER.warn("Locking RL mutex (key: #{key}) for #{delta} seconds pre-emptively")
     sync_wait(delta, mutex)
+  end
+
+  # Log the raw diagnostics of a 429 response so a per-IP / global / Cloudflare-edge
+  # block can be told apart from an ordinary per-route Discord limit after the fact.
+  # Discord's own limiter returns a JSON body with a small retry_after; a Cloudflare
+  # per-IP ban returns an HTML page containing `error code: 1015` plus a `cf-ray`
+  # header and an hour-scale retry. Best-effort: this runs on the failure path and
+  # must never raise.
+  # @param key [Array] the rate limit bucket key.
+  # @param rc_response [RestClient::Response] the 429 response.
+  def log_rate_limit_diagnostics(key, rc_response)
+    headers = rc_response.headers
+    body = rc_response.body.to_s
+    cloudflare = body.include?('error code: 1015') || body.lstrip.start_with?('<')
+    snippet = body[0, 200].to_s.gsub(/\s+/, ' ')
+    Discordrb::LOGGER.ratelimit(
+      "429 diagnostics (key: #{key}) status=#{rc_response.code} " \
+      "global=#{headers[:x_ratelimit_global].inspect} scope=#{headers[:x_ratelimit_scope].inspect} " \
+      "retry_after_header=#{headers[:retry_after].inspect} cf_ray=#{headers[:cf_ray].inspect} " \
+      "via=#{headers[:via].inspect} server=#{headers[:server].inspect} " \
+      "cloudflare_1015=#{cloudflare} body=#{snippet.inspect}"
+    )
+  rescue StandardError => e
+    Discordrb::LOGGER.ratelimit("429 diagnostics logging failed: #{e.class}: #{e.message}")
   end
 
   # Perform rate limit tracing. All this method does is log the current backtrace to the console with the `:ratelimit`
