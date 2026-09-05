@@ -164,6 +164,7 @@ module Discordrb
       @status = :online
 
       @application_commands = {}
+      @application_command_autocompletes = {}
     end
 
     # The list of users the bot shares a server with.
@@ -1579,6 +1580,20 @@ module Discordrb
               debug("Executing application command #{event.command_name}:#{event.command_id}")
 
               @application_commands[event.command_name]&.call(event)
+            rescue StandardError => e
+              log_exception(e)
+            end
+          end
+        when Interaction::TYPES[:command_autocomplete]
+          event = ApplicationCommandAutocompleteEvent.new(data, self)
+
+          Thread.new do
+            Thread.current[:discordrb_name] = "ac-#{event.interaction.id}"
+
+            begin
+              debug("Executing autocomplete for #{event.command_name}:#{event.command_id} (option #{event.focused_option})")
+
+              @application_command_autocompletes[event.command_name]&.call(event)
             rescue StandardError => e
               log_exception(e)
             end

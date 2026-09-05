@@ -558,6 +558,17 @@ module Discordrb
       @application_commands[name] = ApplicationCommandEventHandler.new(attributes, block)
     end
 
+    # This **event** is raised whenever Discord requests autocomplete choices for an
+    # option (flagged with `autocomplete: true`) of the named application command.
+    # The block receives an {ApplicationCommandAutocompleteEvent} and must reply with
+    # choices via {ApplicationCommandAutocompleteEvent#respond_with_choices} within 3s.
+    # @param name [Symbol] The name of the application command this handler is for.
+    # @yieldparam event [ApplicationCommandAutocompleteEvent] The event that was raised.
+    def application_command_autocomplete(name, &block)
+      @application_command_autocompletes ||= {}
+      @application_command_autocompletes[name] = block
+    end
+
     # This **event** is raised whenever an button interaction is created.
     # @param attributes [Hash] The event's attributes.
     # @option attributes [String, Regexp] :custom_id A custom_id to match against.

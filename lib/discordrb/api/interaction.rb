@@ -19,6 +19,20 @@ module Discordrb::API::Interaction
     )
   end
 
+  # Respond to an autocomplete interaction with a list of choices.
+  # https://discord.com/developers/docs/interactions/receiving-and-responding#autocomplete
+  # @param choices [Array<Hash>] Up to 25 `{ name:, value: }` choice hashes.
+  def create_interaction_autocomplete_response(interaction_token, interaction_id, choices)
+    Discordrb::API.request(
+      :interactions_iid_token_callback,
+      interaction_id,
+      :post,
+      "#{Discordrb::API.api_base}/interactions/#{interaction_id}/#{interaction_token}/callback",
+      { type: 8, data: { choices: choices } }.to_json,
+      content_type: :json
+    )
+  end
+
   # Create a response that results in a modal.
   # https://discord.com/developers/docs/interactions/slash-commands#create-interaction-response
   def create_interaction_modal_response(interaction_token, interaction_id, custom_id, title, components)

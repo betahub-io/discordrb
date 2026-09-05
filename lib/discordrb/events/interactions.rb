@@ -232,6 +232,47 @@ module Discordrb::Events
     end
   end
 
+  # Event for APPLICATION_COMMAND_AUTOCOMPLETE interactions. Raised as the user types
+  # into an option flagged with `autocomplete: true`; the handler is expected to reply
+  # with up to 25 choices via {#respond_with_choices}, synchronously, within 3 seconds.
+  class ApplicationCommandAutocompleteEvent < ApplicationCommandEvent
+    # @return [Symbol, nil] The name of the option currently being typed.
+    attr_reader :focused_option
+
+    # @return [Object, nil] The partial value the user has typed into the focused option.
+    attr_reader :focused_value
+
+    def initialize(data, bot)
+      super
+
+      focused = find_focused_option(data.dig('data', 'options') || [])
+      return unless focused
+
+      @focused_option = focused['name']&.to_sym
+      @focused_value = focused['value']
+    end
+
+    # Respond to this autocomplete interaction with a list of choices.
+    # @param choices [Array<Hash>] Up to 25 `{ name:, value: }` choice hashes.
+    def respond_with_choices(choices)
+      @interaction.respond_with_choices(choices)
+    end
+
+    private
+
+    # Autocomplete payloads mark exactly one option (possibly nested under a
+    # subcommand/group) with `focused: true`.
+    def find_focused_option(options)
+      options.each do |opt|
+        return opt if opt['focused']
+
+        nested = opt['options'] && find_focused_option(opt['options'])
+        return nested if nested
+      end
+      nil
+    end
+  end
+
   # Event handler for ApplicationCommandEvents.
   class ApplicationCommandEventHandler < EventHandler
     # @return [Hash]
